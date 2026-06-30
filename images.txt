@@ -15,6 +15,6 @@
 #neo4j:5.26.0-community-bullseye
 #mongo:4.4
 #docker.n8n.io/n8nio/n8n:latest
-nacos/nacos-server:v3.0.1
-
+#nacos/nacos-server:v3.0.1
+apolloconfig/apollo-adminservice:2.4.0
 
