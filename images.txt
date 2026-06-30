@@ -16,5 +16,6 @@
 #mongo:4.4
 #docker.n8n.io/n8nio/n8n:latest
 #nacos/nacos-server:v3.0.1
-apolloconfig/apollo-adminservice:2.4.0
+#apolloconfig/apollo-adminservice:2.4.0
+apolloconfig/apollo-portal:2.4.0
 
