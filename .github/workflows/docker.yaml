@@ -161,13 +161,16 @@ jobs:
 
           # One ACR namespace (lvbey); encode upstream registry/path into one deterministic repository name.
           slug_registry="${source_registry//./-}"; slug_registry="${slug_registry//:/-}"
-          slug_repo="${source_repo//\//--}"
-          slug_repo="$(printf '%s' "$slug_repo" | sed -E 's/[^a-z0-9._-]+/-/g')"
-          target_repo="${slug_registry}--${slug_repo}"
+          slug_repo="${source_repo//\\//-}"
+          target_repo="$(printf '%s-%s' "$slug_registry" "$slug_repo" | sed -E 's/[^a-z0-9._-]+/-/g; s/[-_.]{2,}/-/g; s/^[-_.]+//; s/[-_.]+$//')"
+          # ACR repository names are limited to 2-64 characters.
+          if (( ${#target_repo} < 2 || ${#target_repo} > 64 )); then
+            echo "Mapped repository name must be 2-64 characters for ACR: $target_repo"
+            exit 2
+          fi
           target_tag="$tag"
-          if [[ -n "$INPUT_PLATFORM" ]]; then target_tag="${tag}--${INPUT_PLATFORM//\//-}"; fi
-          (( ${#target_repo} <= 240 && ${#target_tag} <= 128 )) || { echo "Mapped repository/tag too long"; exit 2; }
-          target_image="$registry/$ALIYUN_NAME_SPACE/$target_repo:$target_tag"
+          if [[ -n "$INPUT_PLATFORM" ]]; then target_tag="${tag}--${INPUT_PLATFORM//\\//-}"; fi
+          (( ${#target_tag} <= 128 )) || { echo "Mapped image tag exceeds 128 characters"; exit 2; }
 
           echo "Source image: $source_image"
           echo "Target image: $target_image"
