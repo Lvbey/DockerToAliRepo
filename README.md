@@ -1,99 +1,124 @@
-<p align="center">
-<a href="https://mp.weixin.qq.com/s/ND-h7B5HraEsAAGrdHRPzA"><img src="https://img.shields.io/badge/%E5%85%AC%E4%BC%97%E5%8F%B7-Fox%E7%88%B1%E5%88%86%E4%BA%AB-green.svg?style=for-the-badge" alt="公众号"></a><a href="https://www.douyin.com/user/MS4wLjABAAAACypF2wL10oGtXD5ciH33RPGvVvXeJ0tg2_oLhsBv9hwPj3ET_C30ici0yCu8HZt4?from_tab_name=main&modal_id=7441471383030254902"><img src="https://img.shields.io/badge/%E6%8A%96%E9%9F%B3-FOX%E8%AF%B4%E6%8A%80%E6%9C%AF-important.svg?style=for-the-badge" alt="CSDN"></a><a href="https://www.bilibili.com/video/BV1R4mBYRE4c/?spm_id_from=333.999.0.0&vd_source=3dc7748ead637b3c62ffbecff3ea5957"><img src="https://img.shields.io/badge/%E5%93%94%E5%93%A9%E5%93%94%E5%93%A9-fox%E8%AF%B4%E6%8A%80%E6%9C%AF-9cf?style=for-the-badge" alt="哔哩哔哩"></a>
-</p>
-
 # DockerToAliRepo
 
-使用Github Action将Docker镜像转存到阿里云私有仓库，彻底解决在国内Docker镜像无法拉取的问题。
+使用 GitHub Actions 将上游 Docker/OCI 镜像转存到阿里云容器镜像服务（ACR）。保留原有的 images.txt 批量同步方式，并新增 Linux 命令行工具 gdocker，支持按需同步单个镜像。
 
-B站视频教程地址：《三种方案教你轻松搞定搞定国内镜像拉取的问题》 https://www.bilibili.com/video/BV1R4mBYRE4c
+## 功能
 
-## 具体配置步骤
+- **批量同步**：编辑 images.txt 后 push 到 main，或手动运行 Actions。
+- **按需同步**：Linux 服务器运行 gdocker pull IMAGE[:TAG]，脚本触发本仓库的 workflow_dispatch，等待转存完成后再调用原生 Docker 从 ACR 拉取。
+- **多架构支持**：按需模式不指定平台时，使用 Skopeo 复制完整多架构 manifest；指定 --platform 时使用独立的平台 tag。
+- **统一 ACR namespace**：按需模式默认目标命名空间为 lvbey，并把上游注册表和 repository 映射为确定性的目标 repository 名称。
 
+## GitHub Actions 配置
 
-### 1. 配置阿里云镜像仓库
-登录阿里云后，进入容器镜像服务 https://cr.console.aliyun.com/cn-hangzhou/instances<br>
+进入 **Settings → Secrets and variables → Actions**。
 
-#### 创建个人实例
+### Repository Variables
 
-![个人实例](/img/个人实例.png)
-创建个人实例（免费），创建一个命名空间（**后面会用于环境变量ALIYUN_NAME_SPACE**）
-![命名空间](/img/命名空间.png)
+| 变量 | 示例 | 说明 |
+|---|---|---|
+| ALIYUN_REGISTRY | registry.cn-hangzhou.aliyuncs.com | ACR 控制台提供的登录地址，通常只填主机名，不含协议 |
+| ALIYUN_NAME_SPACE | lvbey | 目标命名空间；按需模式默认 lvbey |
+| ALIYUN_REGISTRY_USER | ACR 用户名 | 推送镜像的账号 |
 
-#### 查看访问凭证
+### Repository Secrets
 
-![访问凭证](/img/访问凭证.png)
+| Secret | 说明 |
+|---|---|
+| ALIYUN_REGISTRY_PASSWORD | ACR 推送账号密码 |
 
-对应后续需要配置的环境变量：<br>
+不要将真实密码或 PAT 提交到仓库。ACR 地址以控制台提供的登录地址为准，个人版与企业版实例的域名格式可能不同。
 
-- 仓库地址（**ALIYUN_REGISTRY**）<br>
+## gdocker 安装
 
-- 用户名（**ALIYUN_REGISTRY_USER**)<br>
+适用于已安装 Docker 的 Linux 主机，需要 Bash、curl、jq、flock、sed 和 sha256sum。
 
-- 密码（**ALIYUN_REGISTRY_PASSWORD**)<br>
+### 1. 下载脚本
 
-  
+~~~bash
+sudo install -d -m 755 /usr/local/bin
+sudo curl -fsSL https://raw.githubusercontent.com/Lvbey/DockerToAliRepo/main/gdocker -o /usr/local/bin/gdocker
+sudo chmod 755 /usr/local/bin/gdocker
+~~~
 
-### 2. Fork 本项目
+### 2. 创建配置
 
-Fork DockerToAliRepo项目<br>
-#### 启动Action
-进入您自己的项目，点击Action，启用Github Action工作流功能<br>
+创建 /etc/gdocker.conf：
 
-> 更多的Github Action使用细节，参考官方文档：https://docs.github.com/zh/actions
+~~~bash
+sudo install -m 600 /dev/null /etc/gdocker.conf
+sudo editor /etc/gdocker.conf
+~~~
 
-![action工作流](/img/action工作流.png)
+配置示例（请替换 Token 和实际 ACR 地址）：
 
+~~~bash
+GH_TOKEN='github_pat_REPLACE_ME'
+GH_REPOSITORY='Lvbey/DockerToAliRepo'
+GH_WORKFLOW_FILE='docker.yaml'
+GH_REF='main'
 
+ALIYUN_REGISTRY='registry.cn-hangzhou.aliyuncs.com'
+ALIYUN_NAMESPACE='lvbey'
 
-#### 配置环境变量
+WAIT_TIMEOUT_SECONDS=900
+POLL_INTERVAL_SECONDS=5
+~~~
 
-进入Settings->Secret and variables->Actions->New Repository secret
-![配置环境变量](/img/配置环境变量.png)
-将前面步骤中出现的**四个变量**<br>
-ALIYUN_NAME_SPACE，ALIYUN_REGISTRY,  ALIYUN_REGISTRY_USER，ALIYUN_REGISTRY_PASSWORD<br>
-配置成环境变量<br>
+GitHub PAT 必须有目标仓库触发 Actions 工作流所需的权限。建议使用 fine-grained PAT，并遵循最小权限原则。配置文件包含敏感令牌，必须限制为 root 可读。
 
-参考配置如下：
+ACR 推送账号密码只保存在 GitHub Actions Repository Secret 中。Linux 主机需提前通过 docker login 登录 ACR，使用具有拉取权限的凭据；gdocker 不会保存 ACR 密码。
 
-```
-ALIYUN_NAME_SPACE=tulingfox
-ALIYUN_REGISTRY=registry.cn-hangzhou.aliyuncs.com
-ALIYUN_REGISTRY_USER=fox666
-ALIYUN_REGISTRY_PASSWORD=输入自己设置的密码
-```
+### 3. 使用
 
+~~~bash
+gdocker pull nginx:1.27
+gdocker pull redis:7.4.1
+gdocker pull ghcr.io/open-webui/open-webui:cuda
 
+# 指定平台；平台使用独立的 ACR tag
+gdocker pull --platform linux/amd64 nginx:1.27
 
-### 3. 添加镜像
-打开images.txt文件，添加你想要的镜像 
+# 查看最近一次任务状态和 GitHub Actions 日志入口
+gdocker status
+gdocker logs
+gdocker config
+~~~
 
-- 可以加tag，也可以不用(默认latest)<br>
-- 可添加 --platform=xxxxx 的参数指定镜像架构<br>
-- 可使用 k8s.gcr.io/kube-state-metrics/kube-state-metrics 格式指定私库<br>
-- 可使用 #开头作为注释<br>
+工作流成功后，gdocker 使用原生 Docker 从 ACR 拉取镜像，并额外打上原始镜像 tag，后续可以直接执行 docker run。
 
-![拉取的镜像](/img/拉取的镜像.png)
-文件提交后，自动进入Github Action构建<br>
+## 镜像名称映射
 
-![action构建](/img/action构建.png)
+按需模式将上游 registry 与 repository 转换为小写的确定性 ACR repository 名，并将路径分隔符转换为双连字符。示例：
 
-### 4. 使用镜像
-回到阿里云，镜像仓库，点击任意镜像，可查看镜像状态。(可以改成公开，拉取镜像免登录)<br>
+| 输入镜像 | ACR 目标镜像（namespace 为 lvbey） |
+|---|---|
+| nginx:1.27 | <registry>/lvbey/docker-io--library--nginx:1.27 |
+| redis:7.4.1 | <registry>/lvbey/docker-io--library--redis:7.4.1 |
+| bitnami/redis:7.4 | <registry>/lvbey/docker-io--bitnami--redis:7.4 |
+| ghcr.io/open-webui/open-webui:cuda | <registry>/lvbey/ghcr-io--open-webui--open-webui:cuda |
 
-![操作指南](/img/操作指南.png)
+显式指定平台时，目标 tag 会追加平台后缀，例如 1.27--linux-amd64，避免不同平台覆盖同一个 tag。未指定平台时，工作流尝试保留上游完整的多架构 manifest。
 
-查看刚刚上传到仓库的redis镜像<br>
+当前按需模式支持常规 IMAGE[:TAG] 引用；digest 引用（@sha256:...）暂未支持。需要认证的上游私有 registry 暂不在第一版范围内。
 
-![成功拉取](/img/成功拉取.png)
+## 原有 images.txt 批量模式
 
-此时就可以使用docker pull拉取redis镜像, 例如：<br>
-```
-docker pull registry.cn-hangzhou.aliyuncs.com/tulingfox/redis:7.4.1
-```
-registry.cn-hangzhou.aliyuncs.com 即 ALIYUN_REGISTRY(阿里云仓库地址)<br>
-tulingfox即 ALIYUN_NAME_SPACE(阿里云镜像仓库的命名空间)<br>
-redis:7.4.1 即 阿里云镜像仓库中显示的镜像名<br>
+批量模式继续支持每行一个镜像、空行、注释以及可选平台参数：
 
-![拉取redis镜像](/img/拉取redis镜像.png)
+~~~text
+#nginx:1.27
+redis:7.4.1
+--platform=linux/amd64 mysql:8.4
+~~~
 
+修改并 push images.txt 到 main 后会自动运行批量工作流；也可以在 Actions 页面手动触发。批量模式继续沿用原有镜像命名逻辑，按需模式使用上文的确定性映射。
+
+## 故障排查与安全
+
+- 无法触发工作流：检查 PAT 权限、仓库名、workflow 文件名和分支配置。
+- 工作流失败：执行 gdocker logs 打开 GitHub Actions 运行页面。
+- 最终 docker pull 认证失败：先在服务器执行 docker login <ACR登录地址>，确保账号至少有拉取权限。
+- 不指定平台时按需模式使用 Skopeo 复制多架构 manifest；指定平台时会复制所选平台并使用独立 tag。
+- GitHub PAT 与 ACR 凭据不应出现在命令行参数、镜像名或日志中。
+- 仅转存你有权访问和使用的镜像。
