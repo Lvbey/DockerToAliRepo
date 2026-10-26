@@ -2,7 +2,7 @@
 set -Eeuo pipefail
 
 VERSION="0.1.0"
-CONFIG_FILE="${GDOCKER_CONFIG:-/etc/gdocker.conf}"
+CONFIG_FILE="${GDOCKER_CONFIG:-$HOME/.config/gdocker.conf}"
 STATE_DIR="${GDOCKER_STATE_DIR:-$HOME/.local/state/gdocker}"
 API_BASE="https://api.github.com"
 
