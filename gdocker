@@ -78,13 +78,13 @@ target_for() {
   [[ "$source_registry" != index.docker.io ]] || source_registry=docker.io
   [[ "$source_registry" != docker.io || "$source_repo" == */* ]] || source_repo="library/$source_repo"
   slug_registry="${source_registry//./-}"; slug_registry="${slug_registry//:/-}"
-  slug_repo="${source_repo//\\//-}"
+  slug_repo="${source_repo//\//-}"
   target_repo="$(printf '%s-%s' "$slug_registry" "$slug_repo" | sed -E 's/[^a-z0-9._-]+/-/g; s/[-_.]{2,}/-/g; s/^[-_.]+//; s/[-_.]+$//')"
   (( ${#target_repo} >= 2 && ${#target_repo} <= 64 )) || die "mapped repository name must be 2-64 characters for ACR: $target_repo"
-  target_tag="$tag"; [[ -z "$platform" ]] || target_tag="${tag}--${platform//\\//-}"
+  target_tag="$tag"; [[ -z "$platform" ]] || target_tag="${tag}--${platform//\//-}"
   (( ${#target_tag} <= 128 )) || die "mapped image tag exceeds 128 characters"
   registry="${ALIYUN_REGISTRY#https://}"; registry="${registry#http://}"
-  printf '%s\\n' "$registry/$ALIYUN_NAMESPACE/$target_repo:$target_tag"
+  printf '%s\n' "$registry/$ALIYUN_NAMESPACE/$target_repo:$target_tag"
 }
 save_state() {
   local request_id="$1" image="$2" run_id="$3" run_url="$4"
