@@ -7,7 +7,7 @@
 - **批量同步**：编辑 images.txt 后 push 到 main，或手动运行 Actions。
 - **按需同步**：Linux 服务器运行 gdocker pull IMAGE[:TAG]，脚本触发本仓库的 workflow_dispatch，等待转存完成后再调用原生 Docker 从 ACR 拉取。
 - **多架构支持**：按需模式不指定平台时，使用 Skopeo 复制完整多架构 manifest；指定 --platform 时使用独立的平台 tag。
-- **统一 ACR namespace**：按需模式默认目标命名空间为 lvbey，并把上游注册表和 repository 映射为确定性的目标 repository 名称。
+- **统一 ACR namespace**：按需模式默认目标命名空间为 lvbey，并把上游注册表和 repository 映射为符合 ACR 命名规则的目标 repository 名称（路径分隔符转换为单个连字符）。
 
 ## GitHub Actions 配置
 
@@ -109,14 +109,14 @@ gdocker config
 
 ## 镜像名称映射
 
-按需模式将上游 registry 与 repository 转换为小写的确定性 ACR repository 名，并将路径分隔符转换为双连字符。示例：
+按需模式将上游 registry 与 repository 转换为小写的 ACR repository 名：注册表与 repository 路径使用单个连字符连接，并将连续分隔符归一化，以满足旧版个人版 ACR 的命名规则（仓库名长度 2-64 个字符）。示例：
 
 | 输入镜像 | ACR 目标镜像（namespace 为 lvbey） |
 |---|---|
-| nginx:1.27 | {ACR_REGISTRY}/lvbey/docker-io--library--nginx:1.27 |
-| redis:7.4.1 | {ACR_REGISTRY}/lvbey/docker-io--library--redis:7.4.1 |
-| bitnami/redis:7.4 | {ACR_REGISTRY}/lvbey/docker-io--bitnami--redis:7.4 |
-| ghcr.io/open-webui/open-webui:cuda | {ACR_REGISTRY}/lvbey/ghcr-io--open-webui--open-webui:cuda |
+| nginx:1.27 | {ACR_REGISTRY}/lvbey/docker-io-library-nginx:1.27 |
+| redis:7.4.1 | {ACR_REGISTRY}/lvbey/docker-io-library-redis:7.4.1 |
+| bitnami/redis:7.4 | {ACR_REGISTRY}/lvbey/docker-io-bitnami-redis:7.4 |
+| ghcr.io/open-webui/open-webui:cuda | {ACR_REGISTRY}/lvbey/ghcr-io-open-webui-open-webui:cuda |
 
 显式指定平台时，目标 tag 会追加平台后缀，例如 1.27--linux-amd64，避免不同平台覆盖同一个 tag。未指定平台时，工作流尝试保留上游完整的多架构 manifest。
 
