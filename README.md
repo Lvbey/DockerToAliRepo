@@ -29,6 +29,24 @@
 
 不要将真实密码或 PAT 提交到仓库。ACR 地址以控制台提供的登录地址为准，个人版与企业版实例的域名格式可能不同。
 
+## ACR 首次推送前的必要设置（旧版个人版）
+
+按需同步会把镜像推送到 `lvbey/<目标仓库名>:<tag>`。旧版个人版 ACR 在目标仓库不存在时，只有当命名空间允许自动创建仓库，推送才会自动创建仓库。否则即使日志显示 `Login Succeeded!`，Skopeo 仍可能在上传 Layer 时返回 `requested access to the resource is denied`。
+
+请在阿里云控制台完成以下检查：
+
+1. 进入容器镜像服务 ACR，切换到杭州地域的旧版个人版实例。
+2. 打开 **仓库管理 → 命名空间**，找到 `lvbey` 并进入命名空间设置。
+3. 确认 **自动创建仓库** 已开启并保存。
+4. 确认 GitHub Actions 中的 `ALIYUN_REGISTRY_USER` 和 `ALIYUN_REGISTRY_PASSWORD` 是该实例的有效访问凭证，并且该凭证可推送镜像。
+5. 重新运行失败的 GitHub Actions workflow。
+
+如果不希望开启自动创建仓库，也可以在 **仓库管理 → 镜像仓库** 中，先手动创建本次目标仓库 `docker-io--library--nginx`，然后重新运行工作流。后续每个新上游镜像会映射为不同的仓库名；若自动创建保持关闭，就需要提前创建每一个目标仓库。
+
+官方说明：
+- [命名空间管理：自动创建仓库设置](https://help.aliyun.com/zh/acr/user-guide/manage-namespaces)
+- [Docker push 失败排查](https://help.aliyun.com/zh/acr/support/faq-about-errors-of-docker-login-docker-push-and-docker-pull)
+
 ## gdocker 安装
 
 适用于已安装 Docker 的 Linux 主机，需要 Bash、curl、jq、flock、sed 和 sha256sum。
