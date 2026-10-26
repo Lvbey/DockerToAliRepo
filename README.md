@@ -93,10 +93,10 @@ gdocker config
 
 | 输入镜像 | ACR 目标镜像（namespace 为 lvbey） |
 |---|---|
-| nginx:1.27 | <registry>/lvbey/docker-io--library--nginx:1.27 |
-| redis:7.4.1 | <registry>/lvbey/docker-io--library--redis:7.4.1 |
-| bitnami/redis:7.4 | <registry>/lvbey/docker-io--bitnami--redis:7.4 |
-| ghcr.io/open-webui/open-webui:cuda | <registry>/lvbey/ghcr-io--open-webui--open-webui:cuda |
+| nginx:1.27 | {ACR_REGISTRY}/lvbey/docker-io--library--nginx:1.27 |
+| redis:7.4.1 | {ACR_REGISTRY}/lvbey/docker-io--library--redis:7.4.1 |
+| bitnami/redis:7.4 | {ACR_REGISTRY}/lvbey/docker-io--bitnami--redis:7.4 |
+| ghcr.io/open-webui/open-webui:cuda | {ACR_REGISTRY}/lvbey/ghcr-io--open-webui--open-webui:cuda |
 
 显式指定平台时，目标 tag 会追加平台后缀，例如 1.27--linux-amd64，避免不同平台覆盖同一个 tag。未指定平台时，工作流尝试保留上游完整的多架构 manifest。
 
