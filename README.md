@@ -43,11 +43,13 @@ sudo chmod 755 /usr/local/bin/gdocker
 
 ### 2. 创建配置
 
-创建 /etc/gdocker.conf：
+创建当前用户自己的配置文件 ~/.config/gdocker.conf：
 
 ~~~bash
-sudo install -m 600 /dev/null /etc/gdocker.conf
-sudo editor /etc/gdocker.conf
+mkdir -p ~/.config
+chmod 700 ~/.config
+install -m 600 /dev/null ~/.config/gdocker.conf
+editor ~/.config/gdocker.conf
 ~~~
 
 配置示例（请替换 Token 和实际 ACR 地址）：
@@ -65,7 +67,7 @@ WAIT_TIMEOUT_SECONDS=900
 POLL_INTERVAL_SECONDS=5
 ~~~
 
-GitHub PAT 必须有目标仓库触发 Actions 工作流所需的权限。建议使用 fine-grained PAT，并遵循最小权限原则。配置文件包含敏感令牌，必须限制为 root 可读。
+GitHub PAT 必须有目标仓库触发 Actions 工作流所需的权限。建议使用 fine-grained PAT，并遵循最小权限原则。配置文件包含敏感令牌，必须限制为当前用户可读（权限 600）。gdocker 默认读取 ~/.config/gdocker.conf；如需指定其他位置，可设置 GDOCKER_CONFIG 环境变量。
 
 ACR 推送账号密码只保存在 GitHub Actions Repository Secret 中。Linux 主机需提前通过 docker login 登录 ACR，使用具有拉取权限的凭据；gdocker 不会保存 ACR 密码。
 
