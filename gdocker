@@ -85,7 +85,7 @@ target_for() {
   slug_registry="${source_registry//./-}"; slug_registry="${slug_registry//:/-}"
   slug_repo="${source_repo//\//-}"
   target_repo="$(printf '%s-%s' "$slug_registry" "$slug_repo" | sed -E 's/[^a-z0-9._-]+/-/g; s/[-_.]{2,}/-/g; s/^[-_.]+//; s/[-_.]+$//')"
-  (( ${#target_repo} >= 2 && ${#target_repo} <= 64 )) || die "mapped repository name must be 2-64 characters for ACR: $target_repo"
+  (( ${#target_repo} >= 2 && ${#target_repo} <= 64 )) || die "mapped repository name must be 2-64 characters for the selected registry: $target_repo"
   target_tag="$tag"; [[ -z "$platform" ]] || target_tag="${tag}--${platform//\//-}"
   (( ${#target_tag} <= 128 )) || die "mapped image tag exceeds 128 characters"
   if [[ "$provider" == tencent ]]; then
@@ -178,7 +178,7 @@ cmd_pull() {
       info "Workflow status: $status (${elapsed}s elapsed)"; sleep "$POLL_INTERVAL_SECONDS"
     done
   else
-    info "Target image already exists in ACR; skipping mirror workflow."
+    info "Target image already exists in the selected registry; skipping mirror workflow."
   fi
 
   info "Pulling from $provider with native Docker…"
