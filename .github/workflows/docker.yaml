@@ -44,22 +44,32 @@ env:
 jobs:
   build:
     if: ${{ !inputs.image }}
-    name: Pull images.txt and push to Aliyun
+    name: Pull images.txt and push to selected registry
     runs-on: ubuntu-latest
     steps:
       - name: Docker Setup Buildx
         uses: docker/setup-buildx-action@v3
       - name: Checkout Code
         uses: actions/checkout@v4
-      - name: Build and push image Aliyun
+      - name: Build and push images to selected registry
+        env:
+          REGISTRY_PROVIDER: ${{ inputs.registry_provider || 'aliyun' }}
         shell: bash
         run: |
           set -euo pipefail
-          : "${ALIYUN_REGISTRY:?Set repository variable ALIYUN_REGISTRY}"
-          : "${ALIYUN_NAME_SPACE:?Set repository variable ALIYUN_NAME_SPACE}"
-          : "${ALIYUN_REGISTRY_USER:?Set repository variable ALIYUN_REGISTRY_USER}"
-          : "${ALIYUN_REGISTRY_PASSWORD:?Set repository secret ALIYUN_REGISTRY_PASSWORD}"
-          printf '%s' "$ALIYUN_REGISTRY_PASSWORD" | docker login --username "$ALIYUN_REGISTRY_USER" --password-stdin "$ALIYUN_REGISTRY"
+          if [[ "$REGISTRY_PROVIDER" == tencent ]]; then
+            registry="${TENCENT_REGISTRY#https://}"; registry="${registry#http://}"
+            namespace="${TENCENT_NAMESPACE:?Set repository variable TENCENT_NAMESPACE}"
+            registry_user="${TENCENT_REGISTRY_USER:?Set repository variable TENCENT_REGISTRY_USER}"
+            registry_password="${TENCENT_REGISTRY_PASSWORD:?Set repository secret TENCENT_REGISTRY_PASSWORD}"
+          else
+            registry="${ALIYUN_REGISTRY:?Set repository variable ALIYUN_REGISTRY}"
+            registry="${registry#https://}"; registry="${registry#http://}"
+            namespace="${ALIYUN_NAME_SPACE:?Set repository variable ALIYUN_NAME_SPACE}"
+            registry_user="${ALIYUN_REGISTRY_USER:?Set repository variable ALIYUN_REGISTRY_USER}"
+            registry_password="${ALIYUN_REGISTRY_PASSWORD:?Set repository secret ALIYUN_REGISTRY_PASSWORD}"
+          fi
+          printf '%s' "$registry_password" | docker login --username "$registry_user" --password-stdin "$registry"
 
           declare -A duplicate_images=()
           declare -A temp_map=()
@@ -106,7 +116,7 @@ jobs:
             [[ -n "$platform" ]] && platform_prefix="${platform//\//_}_"
             name_space_prefix=""
             [[ -n "${duplicate_images[$image_name]:-}" && -n "$name_space" ]] && name_space_prefix="${name_space}_"
-            new_image="$ALIYUN_REGISTRY/$ALIYUN_NAME_SPACE/$platform_prefix$name_space_prefix$image_name_tag"
+            new_image="$registry/$namespace/$platform_prefix$name_space_prefix$image_name_tag"
             if docker tag "$image" "$new_image" && docker push "$new_image"; then
               SUCCESS=$((SUCCESS+1))
             else
@@ -180,7 +190,7 @@ jobs:
           [[ "$source_registry" != docker.io || "$source_repo" == */* ]] || source_repo="library/$source_repo"
           source_image="$source_registry/$source_repo:$tag"
 
-          # One ACR namespace (lvbey); encode upstream registry/path into one deterministic repository name.
+          # Use one namespace and encode upstream registry/path into one deterministic repository name.
           slug_registry="${source_registry//./-}"; slug_registry="${slug_registry//:/-}"
           slug_repo="${source_repo//\\//-}"
           target_repo="$(printf '%s-%s' "$slug_registry" "$slug_repo" | sed -E 's/[^a-z0-9._-]+/-/g; s/[-_.]{2,}/-/g; s/^[-_.]+//; s/[-_.]+$//')"
@@ -192,7 +202,6 @@ jobs:
           target_tag="$tag"
           if [[ -n "$INPUT_PLATFORM" ]]; then target_tag="${tag}--${INPUT_PLATFORM//\//-}"; fi
           (( ${#target_tag} <= 128 )) || { echo "Mapped image tag exceeds 128 characters"; exit 2; }
-          registry="${ALIYUN_REGISTRY#https://}"; registry="${registry#http://}"
           target_image="$registry/$namespace/$target_repo:$target_tag"
 
           echo "Source image: $source_image"
