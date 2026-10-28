@@ -13,6 +13,14 @@ on:
         description: 'Optional target platform, e.g. linux/amd64'
         required: false
         type: string
+      registry_provider:
+        description: 'Destination registry provider'
+        required: false
+        type: choice
+        options:
+          - aliyun
+          - tencent
+        default: aliyun
       request_id:
         description: 'gdocker request ID used to match the workflow run'
         required: false
@@ -28,6 +36,10 @@ env:
   ALIYUN_NAME_SPACE: "${{ vars.ALIYUN_NAME_SPACE || 'lvbey' }}"
   ALIYUN_REGISTRY_USER: "${{ vars.ALIYUN_REGISTRY_USER }}"
   ALIYUN_REGISTRY_PASSWORD: "${{ secrets.ALIYUN_REGISTRY_PASSWORD }}"
+  TENCENT_REGISTRY: "${{ vars.TENCENT_REGISTRY || 'ccr.ccs.tencentyun.com' }}"
+  TENCENT_NAMESPACE: "${{ vars.TENCENT_NAMESPACE }}"
+  TENCENT_REGISTRY_USER: "${{ vars.TENCENT_REGISTRY_USER }}"
+  TENCENT_REGISTRY_PASSWORD: "${{ secrets.TENCENT_REGISTRY_PASSWORD }}"
 
 jobs:
   build:
@@ -115,9 +127,11 @@ jobs:
           INPUT_IMAGE: ${{ inputs.image }}
           INPUT_PLATFORM: ${{ inputs.platform }}
           REQUEST_ID: ${{ inputs.request_id }}
+          REGISTRY_PROVIDER: ${{ inputs.registry_provider || 'aliyun' }}
         shell: bash
         run: |
           set -euo pipefail
+          [[ "$REGISTRY_PROVIDER" == aliyun || "$REGISTRY_PROVIDER" == tencent ]] || { echo "Invalid registry_provider"; exit 2; }
           [[ -n "$REQUEST_ID" ]] || { echo "request_id is required"; exit 2; }
           [[ "$REQUEST_ID" =~ ^[a-zA-Z0-9-]{8,64}$ ]] || { echo "Invalid request_id"; exit 2; }
           [[ "$INPUT_IMAGE" != -* && "$INPUT_IMAGE" != *[[:space:]]* && "$INPUT_IMAGE" != *@* ]] || { echo "Use IMAGE[:TAG]; digest references are not supported yet"; exit 2; }
@@ -128,20 +142,27 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y skopeo
 
-      - name: Mirror image to Aliyun ACR
+      - name: Mirror image to selected registry
         env:
           INPUT_IMAGE: ${{ inputs.image }}
           INPUT_PLATFORM: ${{ inputs.platform }}
+          REGISTRY_PROVIDER: ${{ inputs.registry_provider || 'aliyun' }}
           REQUEST_ID: ${{ inputs.request_id }}
         shell: bash
         run: |
           set -euo pipefail
-          : "${ALIYUN_REGISTRY:?Set repository variable ALIYUN_REGISTRY}"
-          : "${ALIYUN_NAME_SPACE:?Set repository variable ALIYUN_NAME_SPACE}"
-          : "${ALIYUN_REGISTRY_USER:?Set repository variable ALIYUN_REGISTRY_USER}"
-          : "${ALIYUN_REGISTRY_PASSWORD:?Set repository secret ALIYUN_REGISTRY_PASSWORD}"
-
-          registry="${ALIYUN_REGISTRY#https://}"; registry="${registry#http://}"
+          if [[ "$REGISTRY_PROVIDER" == tencent ]]; then
+            registry="${TENCENT_REGISTRY#https://}"; registry="${registry#http://}"
+            namespace="${TENCENT_NAMESPACE:?Set repository variable TENCENT_NAMESPACE}"
+            registry_user="${TENCENT_REGISTRY_USER:?Set repository variable TENCENT_REGISTRY_USER}"
+            registry_password="${TENCENT_REGISTRY_PASSWORD:?Set repository secret TENCENT_REGISTRY_PASSWORD}"
+          else
+            registry="${ALIYUN_REGISTRY:?Set repository variable ALIYUN_REGISTRY}"
+            registry="${registry#https://}"; registry="${registry#http://}"
+            namespace="${ALIYUN_NAME_SPACE:?Set repository variable ALIYUN_NAME_SPACE}"
+            registry_user="${ALIYUN_REGISTRY_USER:?Set repository variable ALIYUN_REGISTRY_USER}"
+            registry_password="${ALIYUN_REGISTRY_PASSWORD:?Set repository secret ALIYUN_REGISTRY_PASSWORD}"
+          fi
           image="$INPUT_IMAGE"
           [[ "${image##*/}" == *:* ]] || image="$image:latest"
           tag="${image##*:}"
@@ -172,12 +193,12 @@ jobs:
           if [[ -n "$INPUT_PLATFORM" ]]; then target_tag="${tag}--${INPUT_PLATFORM//\//-}"; fi
           (( ${#target_tag} <= 128 )) || { echo "Mapped image tag exceeds 128 characters"; exit 2; }
           registry="${ALIYUN_REGISTRY#https://}"; registry="${registry#http://}"
-          target_image="$registry/$ALIYUN_NAME_SPACE/$target_repo:$target_tag"
+          target_image="$registry/$namespace/$target_repo:$target_tag"
 
           echo "Source image: $source_image"
           echo "Target image: $target_image"
           echo "Request ID: $REQUEST_ID"
-          printf '%s' "$ALIYUN_REGISTRY_PASSWORD" | skopeo login --username "$ALIYUN_REGISTRY_USER" --password-stdin "$registry"
+          printf '%s' "$registry_password" | skopeo login --username "$registry_user" --password-stdin "$registry"
           if [[ -n "$INPUT_PLATFORM" ]]; then
             IFS=/ read -r os arch variant <<< "$INPUT_PLATFORM"
             copy_args=(--override-os "$os" --override-arch "$arch")
