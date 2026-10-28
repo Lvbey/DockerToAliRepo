@@ -8,10 +8,10 @@ API_BASE="https://api.github.com"
 
 usage() {
   cat <<'USAGE'
-gdocker - mirror an upstream container image to Aliyun ACR through GitHub Actions.
+gdocker - mirror an upstream container image to Aliyun ACR or Tencent Cloud TCR through GitHub Actions.
 
 Usage:
-  gdocker pull [--platform linux/amd64] IMAGE[:TAG]
+  gdocker pull [--registry aliyun|tencent] [--platform linux/amd64] IMAGE[:TAG]
   gdocker status
   gdocker logs
   gdocker config
@@ -20,7 +20,8 @@ Usage:
 
 Examples:
   gdocker pull nginx:1.27
-  gdocker pull --platform linux/arm64 redis:7.4.1
+  gdocker pull --registry tencent nginx:1.27
+  gdocker pull --registry tencent --platform linux/amd64 redis:7.4.1
   gdocker pull ghcr.io/open-webui/open-webui:cuda
 USAGE
 }
@@ -39,6 +40,9 @@ GH_WORKFLOW_FILE="${GH_WORKFLOW_FILE:-docker.yaml}"
 GH_REF="${GH_REF:-main}"
 ALIYUN_REGISTRY="${ALIYUN_REGISTRY:-registry.cn-hangzhou.aliyuncs.com}"
 ALIYUN_NAMESPACE="${ALIYUN_NAMESPACE:-lvbey}"
+TENCENT_REGISTRY="${TENCENT_REGISTRY:-ccr.ccs.tencentyun.com}"
+TENCENT_NAMESPACE="${TENCENT_NAMESPACE:-}"
+DEFAULT_REGISTRY_PROVIDER="${DEFAULT_REGISTRY_PROVIDER:-aliyun}"
 GH_TOKEN="${GH_TOKEN:-}"
 WAIT_TIMEOUT_SECONDS="${WAIT_TIMEOUT_SECONDS:-900}"
 POLL_INTERVAL_SECONDS="${POLL_INTERVAL_SECONDS:-5}"
@@ -56,6 +60,7 @@ require_config() {
   [[ -n "$GH_TOKEN" ]] || die "GH_TOKEN is not configured in $CONFIG_FILE"
   [[ "$GH_REPOSITORY" =~ ^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$ ]] || die "invalid GH_REPOSITORY"
   [[ "$ALIYUN_NAMESPACE" =~ ^[a-z0-9][a-z0-9_-]*$ ]] || die "invalid ALIYUN_NAMESPACE"
+  [[ "$DEFAULT_REGISTRY_PROVIDER" == aliyun || "$DEFAULT_REGISTRY_PROVIDER" == tencent ]] || die "DEFAULT_REGISTRY_PROVIDER must be aliyun or tencent"
 }
 normalise_image() {
   local image="$1" last
@@ -65,7 +70,7 @@ normalise_image() {
   printf '%s' "$image"
 }
 target_for() {
-  local image="$1" platform="${2:-}" tag source_path first source_registry source_repo slug_registry slug_repo target_tag registry
+  local image="$1" platform="${2:-}" provider="${3:-$DEFAULT_REGISTRY_PROVIDER}" tag source_path first source_registry source_repo slug_registry slug_repo target_tag registry namespace
   image="$(normalise_image "$image")"; tag="${image##*:}"; source_path="${image%:*}"; first="${source_path%%/*}"
   if [[ "$source_path" != */* ]]; then
     source_registry=docker.io; source_repo="library/$source_path"
@@ -83,8 +88,18 @@ target_for() {
   (( ${#target_repo} >= 2 && ${#target_repo} <= 64 )) || die "mapped repository name must be 2-64 characters for ACR: $target_repo"
   target_tag="$tag"; [[ -z "$platform" ]] || target_tag="${tag}--${platform//\//-}"
   (( ${#target_tag} <= 128 )) || die "mapped image tag exceeds 128 characters"
-  registry="${ALIYUN_REGISTRY#https://}"; registry="${registry#http://}"
-  printf '%s\n' "$registry/$ALIYUN_NAMESPACE/$target_repo:$target_tag"
+  if [[ "$provider" == tencent ]]; then
+    registry="${TENCENT_REGISTRY#https://}"; registry="${registry#http://}"
+    namespace="$TENCENT_NAMESPACE"
+    [[ -n "$namespace" ]] || die "TENCENT_NAMESPACE is required for Tencent TCR; configure it in $CONFIG_FILE"
+    [[ "$namespace" =~ ^[a-z0-9][a-z0-9_-]*$ ]] || die "invalid TENCENT_NAMESPACE"
+  elif [[ "$provider" == aliyun ]]; then
+    registry="${ALIYUN_REGISTRY#https://}"; registry="${registry#http://}"
+    namespace="$ALIYUN_NAMESPACE"
+  else
+    die "unsupported registry provider: $provider (use aliyun or tencent)"
+  fi
+  printf '%s\n' "$registry/$namespace/$target_repo:$target_tag"
 }
 save_state() {
   local request_id="$1" image="$2" run_id="$3" run_url="$4"
@@ -111,11 +126,13 @@ cmd_status() {
 cmd_logs() { [[ -s "$STATE_FILE" ]] || die "no gdocker task recorded yet"; jq -r '.run_url // "workflow URL not available yet"' "$STATE_FILE"; }
 
 cmd_pull() {
-  local platform="" image="" arg request_id lock_file target run_id="" run_url="" start now payload runs status conclusion elapsed
+  local platform="" provider="$DEFAULT_REGISTRY_PROVIDER" image="" arg request_id lock_file target run_id="" run_url="" start now payload runs status conclusion elapsed
   shift
   while (($#)); do
     arg="$1"
     case "$arg" in
+      --registry) (($# >= 2)) || die "--registry requires aliyun or tencent"; provider="$2"; shift 2 ;;
+      --registry=*) provider="${arg#*=}"; shift ;;
       --platform) (($# >= 2)) || die "--platform requires a value"; platform="$2"; shift 2 ;;
       --platform=*) platform="${arg#*=}"; shift ;;
       --help|-h) usage; return 0 ;;
@@ -123,17 +140,18 @@ cmd_pull() {
       *) [[ -z "$image" ]] || die "only one image may be pulled at a time"; image="$arg"; shift ;;
     esac
   done
-  [[ -n "$image" ]] || die "usage: gdocker pull [--platform linux/amd64] IMAGE[:TAG]"
+  [[ -n "$image" ]] || die "usage: gdocker pull [--registry aliyun|tencent] [--platform linux/amd64] IMAGE[:TAG]"
+  [[ "$provider" == aliyun || "$provider" == tencent ]] || die "--registry must be aliyun or tencent"
   [[ -z "$platform" || "$platform" =~ ^[a-zA-Z0-9._-]+/[a-zA-Z0-9._-]+(/[a-zA-Z0-9._-]+)?$ ]] || die "invalid platform"
   require_config
-  image="$(normalise_image "$image")"; target="$(target_for "$image" "$platform")"
+  image="$(normalise_image "$image")"; target="$(target_for "$image" "$platform" "$provider")"
   lock_file="$STATE_DIR/locks/$(printf '%s' "$target" | sha256sum | awk '{print $1}').lock"
   exec 9>"$lock_file"; flock 9
-  info "Source image: $image"; info "ACR image: $target"
+  info "Source image: $image"; info "$provider image: $target"
 
   if ! docker manifest inspect "$target" >/dev/null 2>&1; then
     request_id="gdocker-$(date -u +%Y%m%d%H%M%S)-$$-$RANDOM"
-    payload="$(jq -n --arg ref "$GH_REF" --arg image "$image" --arg platform "$platform" --arg request_id "$request_id" '{ref:$ref,inputs:{image:$image,platform:$platform,request_id:$request_id}}')"
+    payload="$(jq -n --arg ref "$GH_REF" --arg image "$image" --arg platform "$platform" --arg provider "$provider" --arg request_id "$request_id" '{ref:$ref,inputs:{image:$image,platform:$platform,registry_provider:$provider,request_id:$request_id}}')"
     info "Dispatching GitHub Actions workflow (request $request_id)…"
     curl --fail --silent --show-error --connect-timeout 10 --max-time 30 -X POST \
       -H "Authorization: Bearer $GH_TOKEN" -H "Accept: application/vnd.github+json" \
@@ -163,7 +181,7 @@ cmd_pull() {
     info "Target image already exists in ACR; skipping mirror workflow."
   fi
 
-  info "Pulling from Aliyun with native Docker…"
+  info "Pulling from $provider with native Docker…"
   if [[ -n "$platform" ]]; then docker pull --platform "$platform" "$target"; else docker pull "$target"; fi
   [[ "$image" == "$target" ]] || docker tag "$target" "$image"
   info "Done. Local image tag: $image"
@@ -174,7 +192,7 @@ case "${1:-}" in
   status) cmd_status ;;
   logs) cmd_logs ;;
   config)
-    printf 'Config file: %s\nGitHub repository: %s\nWorkflow: %s\nRef: %s\nACR registry: %s\nACR namespace: %s\n' "$CONFIG_FILE" "$GH_REPOSITORY" "$GH_WORKFLOW_FILE" "$GH_REF" "$ALIYUN_REGISTRY" "$ALIYUN_NAMESPACE"
+    printf 'Config file: %s\nGitHub repository: %s\nWorkflow: %s\nRef: %s\nDefault registry provider: %s\nAliyun ACR: %s/%s\nTencent TCR: %s/%s\n' "$CONFIG_FILE" "$GH_REPOSITORY" "$GH_WORKFLOW_FILE" "$GH_REF" "$DEFAULT_REGISTRY_PROVIDER" "$ALIYUN_REGISTRY" "$ALIYUN_NAMESPACE" "$TENCENT_REGISTRY" "${TENCENT_NAMESPACE:-<not configured>}"
     [[ -n "$GH_TOKEN" ]] && echo 'GitHub token: configured' || echo 'GitHub token: MISSING'
     ;;
   --version|-V) echo "gdocker $VERSION" ;;
