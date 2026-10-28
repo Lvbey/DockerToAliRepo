@@ -169,7 +169,7 @@ jobs:
             exit 2
           fi
           target_tag="$tag"
-          if [[ -n "$INPUT_PLATFORM" ]]; then target_tag="${tag}--${INPUT_PLATFORM//\\//-}"; fi
+          if [[ -n "$INPUT_PLATFORM" ]]; then target_tag="${tag}--${INPUT_PLATFORM//\//-}"; fi
           (( ${#target_tag} <= 128 )) || { echo "Mapped image tag exceeds 128 characters"; exit 2; }
           registry="${ALIYUN_REGISTRY#https://}"; registry="${registry#http://}"
           target_image="$registry/$ALIYUN_NAME_SPACE/$target_repo:$target_tag"
